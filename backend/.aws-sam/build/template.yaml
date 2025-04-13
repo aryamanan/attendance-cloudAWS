@@ -10,15 +10,19 @@ Globals:
       Variables:
         ATTENDANCE_TABLE:
           Ref: AttendanceTable
+  Api:
+    Cors:
+      AllowMethods: '''GET,POST,OPTIONS'''
+      AllowHeaders: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Origin,Accept'''
+      AllowOrigin: '''*'''
+      MaxAge: '''600'''
 Resources:
   AttendanceApi:
     Type: AWS::Serverless::Api
     Properties:
       StageName: prod
-      Cors:
-        AllowMethods: '''GET,POST,OPTIONS'''
-        AllowHeaders: '''Content-Type,Authorization'''
-        AllowOrigin: '''*'''
+      EndpointConfiguration:
+        Type: REGIONAL
   AttendanceFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -43,6 +47,18 @@ Resources:
       - DynamoDBCrudPolicy:
           TableName:
             Ref: AttendanceTable
+      - Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - dynamodb:PutItem
+          - dynamodb:GetItem
+          - dynamodb:Query
+          - dynamodb:Scan
+          Resource:
+            Fn::GetAtt:
+            - AttendanceTable
+            - Arn
     Metadata:
       SamResourceId: AttendanceFunction
   AttendanceTable:

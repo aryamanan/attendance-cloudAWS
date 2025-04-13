@@ -8,27 +8,36 @@ from typing import Dict, Any
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['ATTENDANCE_TABLE'])
 
+def create_response(status_code: int, body: Any) -> Dict[str, Any]:
+    """Create a response with CORS headers"""
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Origin,Accept',
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+            'Content-Type': 'application/json'
+        },
+        'body': json.dumps(body)
+    }
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Main Lambda handler function for the attendance system
     """
-    http_method = event['httpMethod']
+    # Handle OPTIONS requests for CORS
+    if event['httpMethod'] == 'OPTIONS':
+        return create_response(200, {'message': 'CORS preflight handled'})
     
     try:
-        if http_method == 'POST':
+        if event['httpMethod'] == 'POST':
             return mark_attendance(event)
-        elif http_method == 'GET':
+        elif event['httpMethod'] == 'GET':
             return get_attendance(event)
         else:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Unsupported HTTP method'})
-            }
+            return create_response(400, {'error': 'Unsupported HTTP method'})
     except Exception as e:
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+        return create_response(500, {'error': str(e)})
 
 def mark_attendance(event: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -56,15 +65,9 @@ def mark_attendance(event: Dict[str, Any]) -> Dict[str, Any]:
         # Save to DynamoDB
         table.put_item(Item=item)
         
-        return {
-            'statusCode': 200,
-            'body': json.dumps(item)
-        }
+        return create_response(200, item)
     except KeyError as e:
-        return {
-            'statusCode': 400,
-            'body': json.dumps({'error': f'Missing required field: {str(e)}'})
-        }
+        return create_response(400, {'error': f'Missing required field: {str(e)}'})
 
 def get_attendance(event: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -90,12 +93,6 @@ def get_attendance(event: Dict[str, Any]) -> Dict[str, Any]:
             ExpressionAttributeNames={'#date': 'date'} if 'startDate' in query_params else {}
         )
         
-        return {
-            'statusCode': 200,
-            'body': json.dumps(response['Items'])
-        }
+        return create_response(200, response['Items'])
     except KeyError as e:
-        return {
-            'statusCode': 400,
-            'body': json.dumps({'error': f'Missing required parameter: {str(e)}'})
-        } 
+        return create_response(400, {'error': f'Missing required parameter: {str(e)}'}) 
