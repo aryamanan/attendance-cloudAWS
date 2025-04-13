@@ -1,0 +1,83 @@
+name: Deploy Full Stack Application
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Install AWS SAM CLI
+        run: |
+          pip install aws-sam-cli
+
+      - name: Deploy Backend
+        working-directory: backend
+        run: |
+          sam build
+          sam deploy --stack-name attendance-sys --region ap-south-1 --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset
+        
+      - name: Get API URL
+        id: get-api-url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks --stack-name attendance-sys --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
+          echo "API_URL=$API_URL" >> $GITHUB_ENV
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+
+      - name: Create Frontend Environment File
+        working-directory: frontend
+        run: |
+          echo "VITE_API_URL=${{ env.API_URL }}" > .env
+
+      - name: Build Frontend
+        working-directory: frontend
+        run: |
+          npm run build
+
+      - name: Deploy to AWS Amplify
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Create/Update Amplify App
+        run: |
+          APP_ID=$(aws amplify list-apps --query 'apps[?name==`attendance-system`].appId' --output text)
+          if [ -z "$APP_ID" ]; then
+            # Create new app
+            aws amplify create-app --name attendance-system --platform WEB --custom-rules '[{"source": "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|ttf|map|json)$)([^.]+$)/>", "target": "/index.html", "status": "200"}]'
+            APP_ID=$(aws amplify list-apps --query 'apps[?name==`attendance-system`].appId' --output text)
+          fi
+          # Create zip of the build
+          cd frontend/dist && zip -r ../../frontend.zip .
+          # Deploy
+          aws amplify start-deployment --app-id $APP_ID --branch-name prod --source-url $(aws s3 cp frontend.zip s3://attendance-system-deployment-$(date +%s)/frontend.zip --acl public-read --output text) 
