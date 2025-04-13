@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Attendance System Backend
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.9
+    Environment:
+      Variables:
+        ATTENDANCE_TABLE: !Ref AttendanceTable
+
+Resources:
+  # API Gateway
+  AttendanceApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  # Lambda Functions
+  AttendanceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./app
+      Handler: app.lambda_handler
+      Events:
+        MarkAttendance:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AttendanceApi
+            Path: /attendance
+            Method: POST
+        GetAttendance:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AttendanceApi
+            Path: /attendance/{userId}
+            Method: GET
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AttendanceTable
+
+  # DynamoDB Table
+  AttendanceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-Attendance
+      BillingMode: PAY_PER_REQUEST  # Free tier eligible
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: date
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true  # Enable server-side encryption
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${AttendanceApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
+  
+  AttendanceTableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref AttendanceTable 
